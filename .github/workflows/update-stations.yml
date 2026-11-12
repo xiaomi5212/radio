@@ -1,1 +1,81 @@
+name: 更新电台列表
 
+on:
+  schedule:
+    - cron: '0 20 * * *'      # 每天 20:00 UTC（北京时间次日 4:00）
+  workflow_dispatch:            # 也可以手动点一下立即更新
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 抓取电台列表
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+
+          HOSTS = [
+              'https://de1.api.radio-browser.info',
+              'https://at1.api.radio-browser.info',
+              'https://nl1.api.radio-browser.info',
+          ]
+          QUERY = ('/json/stations/search?limit=400&hidebroken=true'
+                   '&order=clickcount&reverse=true&countrycode=CN')
+
+          data = None
+          for host in HOSTS:
+              try:
+                  req = urllib.request.Request(host + QUERY, headers={'User-Agent': 'radio-web-static/1.0'})
+                  d = json.loads(urllib.request.urlopen(req, timeout=40).read().decode())
+                  if isinstance(d, list) and d:
+                      data = d
+                      break
+              except Exception as e:
+                  print('fail', host, e)
+
+          if not data:
+              raise SystemExit('all mirrors failed')
+
+          out, seen = [], set()
+          for s in data:
+              url = (s.get('url_resolved') or s.get('url') or '').strip()
+              if not url.startswith('https://'):
+                  continue
+              name = (s.get('name') or '').strip()
+              key = name.lower()
+              if not name or key in seen:
+                  continue
+              seen.add(key)
+              out.append({
+                  'name': name,
+                  'url': url,
+                  'favicon': s.get('favicon') or '',
+                  'country': s.get('country') or '',
+                  'countrycode': s.get('countrycode') or '',
+                  'tags': s.get('tags') or '',
+                  'clickcount': s.get('clickcount') or 0,
+              })
+
+          with open('stations.json', 'w', encoding='utf-8') as f:
+              json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
+
+          print('stations:', len(out))
+          PY
+
+      - name: 提交变更
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add stations.json
+          if git diff --cached --quiet; then
+            echo "没有变化，跳过提交"
+          else
+            git commit -m "chore: 更新电台列表"
+            git push
+          fi
+#（注：内容由AI生成）
