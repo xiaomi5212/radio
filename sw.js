@@ -1,10 +1,23 @@
 /* 网络电台 · 离线缓存（只缓存页面外壳，音频与接口始终走网络） */
-const CACHE = 'radio-shell-v2';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+const CACHE = 'radio-shell-v4';
+const ROOT = './';
+const PAGE = './index.html';
+const ASSETS = [ROOT, PAGE, './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+
+const FALLBACK = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+  + '<meta name="viewport" content="width=device-width,initial-scale=1"><title>网络电台</title>'
+  + '<style>html,body{background:#181411;color:#f4efe6;font-family:system-ui,sans-serif;'
+  + 'display:grid;place-items:center;height:100%;margin:0}div{text-align:center;color:#9a8f80;font-size:14px}</style></head>'
+  + '<body><div><p>网络电台</div></body></html>';
 
 self.addEventListener('install', function(e){
-  e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(ASSETS); }).catch(function(){}));
-  self.skipWaiting();
+  e.waitUntil(
+    caches.open(CACHE).then(function(c){
+      return Promise.all(ASSETS.map(function(a){
+        return c.add(a).catch(function(){});
+      }));
+    }).then(function(){ return self.skipWaiting(); })
+  );
 });
 
 self.addEventListener('activate', function(e){
@@ -13,6 +26,10 @@ self.addEventListener('activate', function(e){
   }).then(function(){ return self.clients.claim(); }));
 });
 
+function shell(){
+  return caches.match(PAGE).then(function(r){ return r || caches.match(ROOT); });
+}
+
 self.addEventListener('fetch', function(e){
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -20,17 +37,33 @@ self.addEventListener('fetch', function(e){
   if (url.origin !== self.location.origin) return;
 
   if (req.mode === 'navigate'){
-    e.respondWith(
-      fetch(req).then(function(res){
-        const copy = res.clone();
-        caches.open(CACHE).then(function(c){ c.put('./index.html', copy); }).catch(function(){});
+    /* 立刻用缓存渲染，同时后台更新，保证从桌面点开不白屏 */
+    e.respondWith(shell().then(function(cached){
+      const net = fetch(req).then(function(res){
+        if (res && res.ok){
+          const copy = res.clone();
+          caches.open(CACHE).then(function(c){ c.put(PAGE, copy); }).catch(function(){});
+        }
         return res;
-      }).catch(function(){
-        return caches.match('./index.html').then(function(r){ return r || caches.match('./'); });
-      })
-    );
+      }).catch(function(){ return null; });
+      if (cached) return cached;
+      return net.then(function(res){
+        if (res) return res;
+        return new Response(FALLBACK, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      });
+    }));
     return;
   }
-  e.respondWith(caches.match(req).then(function(r){ return r || fetch(req); }));
+
+  e.respondWith(
+    caches.match(req).then(function(r){
+      if (r) return r;
+      return fetch(req).then(function(res){
+        const copy = res.clone();
+        caches.open(CACHE).then(function(c){ c.put(req, copy); }).catch(function(){});
+        return res;
+      });
+    })
+  );
 });
 //（注：内容由AI生成）

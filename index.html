@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<style>html,body{background:#181411;color:#f4efe6}</style>
 <title>网络电台 · 在线收听</title>
 <meta name="description" content="搜索并在线收听网络电台">
 <link rel="manifest" href="manifest.webmanifest">
@@ -1008,21 +1010,57 @@ volEl.addEventListener('input', ()=>{
 });
 
 /* ===== 数据加载 ===== */
-async function api(path){
-  const deadline = Date.now() + 18000;
-  for (const host of HOSTS){
-    if (Date.now() > deadline - 1000) break;
-    try{
-      const ctrl = new AbortController();
-      const timer = setTimeout(()=>ctrl.abort(), Math.min(9000, Math.max(2000, deadline - Date.now())));
-      const res = await fetch(host + path, { signal: ctrl.signal, headers: { 'User-Agent': 'radio-web-demo' } });
-      clearTimeout(timer);
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-    }catch(e){ /* 换下一个镜像 */ }
-  }
-  return null;
+function apiOne(host, path){
+  return new Promise(function(resolve, reject){
+    const ctrl = new AbortController();
+    const timer = setTimeout(function(){ ctrl.abort(); reject(new Error('timeout')); }, 22000);
+    fetch(host + path, { signal: ctrl.signal, headers: { 'User-Agent': 'radio-web-demo' } })
+      .then(function(res){
+        if (!res.ok) throw new Error('bad status');
+        return res.json();
+      })
+      .then(function(data){
+        clearTimeout(timer);
+        if (Array.isArray(data) && data.length) resolve(data); else throw new Error('empty');
+      })
+      .catch(function(e){ clearTimeout(timer); reject(e); });
+  });
+}
+
+/* 镜像接力：先发第一个，2 秒没回再叠加下一个，谁先返回用谁（避免三个请求互相抢带宽） */
+function api(path){
+  return new Promise(function(resolve){
+    let settled = false;
+    const controllers = [];
+    const timers = [];
+    function finish(v){
+      if (settled) return;
+      settled = true;
+      timers.forEach(clearTimeout);
+      controllers.forEach(function(c){ try{ c.abort(); }catch(e){} });
+      resolve(v === undefined ? null : v);
+    }
+    HOSTS.forEach(function(host, i){
+      const kick = setTimeout(function(){
+        if (settled) return;
+        const ctrl = new AbortController();
+        controllers.push(ctrl);
+        const t = setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 22000);
+        timers.push(t);
+        fetch(host + path, { signal: ctrl.signal, headers: { 'User-Agent': 'radio-web-demo' } })
+          .then(function(res){
+            if (!res.ok) throw new Error('status');
+            return res.json();
+          })
+          .then(function(data){
+            if (Array.isArray(data) && data.length) finish(data);
+          })
+          .catch(function(){});
+      }, i * 2000);
+      timers.push(kick);
+    });
+    setTimeout(function(){ finish(null); }, 26000);
+  });
 }
 
 const CACHE_KEY = 'radio_cache_v1';
@@ -1043,10 +1081,12 @@ function setHint(on){
   if (el) el.hidden = !on;
 }
 
+let fullRetry = 0;
+
 async function loadDefault(){
   if (loading) return;
   const cached = readCache();
-  if (cached){
+  if (cached && !bootCache){
     pool = mergeMine(cached);
     render(pool);
     renderResume();
@@ -1056,7 +1096,22 @@ async function loadDefault(){
   if (!cached) setHint(true);
   let raw = null;
   try{
-    raw = await api('/json/stations/search?limit=200&hidebroken=true&order=clickcount&reverse=true&countrycode=CN');
+    raw = await api('/json/stations/search?limit=80&hidebroken=true&order=clickcount&reverse=true&countrycode=CN');
+    if (raw && !favOnly){
+      const quick = dedupe(raw.map(norm).filter(Boolean)).sort(function(a,b){ return b.clicks - a.clicks; });
+      if (quick.length){
+        pool = mergeMine(quick);
+        render(pool);
+        renderResume();
+        writeCache(quick);
+      }
+    }
+    const full = await api('/json/stations/search?limit=200&hidebroken=true&order=clickcount&reverse=true&countrycode=CN');
+    if (full) raw = full;
+    else if (fullRetry < 2 && !favOnly){
+      fullRetry++;
+      setTimeout(function(){ if (!favOnly && !loading) loadDefault(); }, 20000);
+    }
   }finally{
     loading = false;
     setHint(false);
@@ -1276,8 +1331,9 @@ document.addEventListener('keydown', function(e){
   }
 });
 
-/* ===== 启动：先渲染内置数据，再拉在线数据 ===== */
-pool = mergeMine(dedupe(SEED.map(norm)));
+/* ===== 启动：有缓存先上缓存，没有再用内置数据 ===== */
+const bootCache = readCache();
+pool = mergeMine(bootCache ? dedupe(bootCache) : dedupe(SEED.map(norm)));
 render(pool, true);
 setNowPlaying(null);
 updateFavMarks();
