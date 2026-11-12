@@ -135,6 +135,13 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
 @media(min-width:980px){.grid{grid-template-columns:repeat(3,1fr);gap:14px}}
 @media(min-width:1420px){.grid{grid-template-columns:repeat(4,1fr)}}
 
+.chips{display:flex;gap:8px;overflow-x:auto;margin:0 0 12px;padding-bottom:2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface);
+  color:var(--muted);font:inherit;font-size:13px;cursor:pointer;transition:background .16s,color .16s,border-color .16s}
+.chip:hover{color:var(--text);border-color:var(--line-strong)}
+.chip.active{background:var(--accent-wash);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+
 .resume{margin-bottom:14px}
 .resume-card{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font:inherit;color:inherit;
   background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);padding:10px 12px;cursor:pointer;
@@ -280,6 +287,19 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
             <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none" opacity=".85"/>
           </svg>
         </button>
+        <button class="icon-btn" id="sleepBtn" type="button" aria-expanded="false" aria-label="睡眠定时" title="睡眠定时">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path d="M20.5 13.2A8.5 8.5 0 1111 3.6a7 7 0 009.5 9.6z"/>
+          </svg>
+          <span class="badge" id="sleepBadge" hidden></span>
+        </button>
+      </div>
+      <div class="theme-pop" id="sleepPop" hidden>
+        <button type="button" data-min="0">关闭定时</button>
+        <button type="button" data-min="15">15 分钟后停止</button>
+        <button type="button" data-min="30">30 分钟后停止</button>
+        <button type="button" data-min="60">60 分钟后停止</button>
+        <button type="button" data-min="90">90 分钟后停止</button>
       </div>
       <div class="theme-pop" id="themePop" hidden>
         <button type="button" data-theme="ember"><i style="background:#e8a33d"></i>暖夜</button>
@@ -299,6 +319,14 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
 </header>
 
 <main>
+  <div class="chips" id="chips" role="group" aria-label="按分类筛选">
+    <button class="chip active" type="button" data-key="">全部</button>
+    <button class="chip" type="button" data-key="music">音乐</button>
+    <button class="chip" type="button" data-key="news">新闻</button>
+    <button class="chip" type="button" data-key="story">故事</button>
+    <button class="chip" type="button" data-key="finance">财经</button>
+    <button class="chip" type="button" data-key="tv">伴音</button>
+  </div>
   <div class="resume" id="resume" hidden>
     <button class="resume-card" id="resumeBtn" type="button">
       <div class="resume-art" id="resumeArt"></div>
@@ -617,7 +645,29 @@ function letterOf(s){
 }
 
 /* ===== 渲染 ===== */
+const FILTERS = [
+  { k:'',        label:'全部' },
+  { k:'music',   label:'音乐', tags:['music','pop','classical','ambient','oldies','jazz','rock','dance','electronic','hits','chill'] },
+  { k:'news',    label:'新闻', tags:['news','information'] },
+  { k:'story',   label:'故事', tags:['storytelling','crosstalk','comedy','spoken','audiobook'] },
+  { k:'finance', label:'财经', tags:['economics','business','financial'] },
+  { k:'tv',      label:'伴音', tags:['tv'] }
+];
+let filterKey = '';
+
+function chipMatch(s){
+  const f = FILTERS.find(function(x){ return x.k === filterKey; });
+  if (!f || !f.tags) return true;
+  const t = (s.tag || '').toLowerCase();
+  return f.tags.some(function(x){ return t.indexOf(x) >= 0; });
+}
+function filterLabel(){
+  const f = FILTERS.find(function(x){ return x.k === filterKey; });
+  return (f && f.k) ? f.label : '热门中文电台';
+}
+
 function render(list){
+  if (filterKey) list = list.filter(chipMatch);
   stations = list;
   elMap = new Map();
   grid.innerHTML = '';
@@ -1066,6 +1116,19 @@ function setHint(on){
 
 let fullRetry = 0;
 
+/* 先读自己仓库里的静态列表（快、稳），拿不到再走线上接口 */
+async function fetchStations(){
+  try{
+    const res = await fetch('stations.json', { cache: 'no-cache' });
+    if (res.ok){
+      const d = await res.json();
+      const arr = Array.isArray(d) ? d : (d && Array.isArray(d.list) ? d.list : null);
+      if (arr && arr.length) return arr;
+    }
+  }catch(e){}
+  return api('/json/stations/search?limit=200&hidebroken=true&order=clickcount&reverse=true&countrycode=CN');
+}
+
 async function loadDefault(){
   if (loading) return;
   const cached = readCache();
@@ -1075,11 +1138,11 @@ async function loadDefault(){
     renderResume();
   }
   loading = true;
-  listTitle.textContent = '热门中文电台';
+  listTitle.textContent = filterLabel();
   if (!cached) setHint(true);
   let raw = null;
   try{
-    raw = await api('/json/stations/search?limit=200&hidebroken=true&order=clickcount&reverse=true&countrycode=CN');
+    raw = await fetchStations();
   }finally{
     loading = false;
     setHint(false);
@@ -1148,7 +1211,7 @@ input.addEventListener('input', ()=>{
     else showState('正在搜索…', '正在从在线电台库查找');
   } else {
     lastQuery = '';
-    listTitle.textContent = '热门中文电台';
+    listTitle.textContent = filterLabel();
     if (pool.length) render(pool);
   }
 
@@ -1166,6 +1229,74 @@ clearBtn.addEventListener('click', ()=>{
   clearTimeout(searchTimer);
   input.focus();
   loadDefault();
+});
+
+/* ===== 分类筛选 ===== */
+document.getElementById('chips').addEventListener('click', function(ev){
+  const btn = ev.target.closest('.chip');
+  if (!btn) return;
+  filterKey = btn.dataset.key || '';
+  this.querySelectorAll('.chip').forEach(function(c){ c.classList.toggle('active', c === btn); });
+  if (!input.value.trim()) listTitle.textContent = filterLabel();
+  render(pool);
+  renderResume();
+});
+
+/* ===== 睡眠定时 ===== */
+let sleepAt = 0, sleepTimer = null, sleepTick = null;
+const sleepBtn = document.getElementById('sleepBtn');
+const sleepPop = document.getElementById('sleepPop');
+const sleepBadge = document.getElementById('sleepBadge');
+
+function sleepRemain(){
+  if (!sleepAt) return 0;
+  return Math.max(0, Math.round((sleepAt - Date.now()) / 60000));
+}
+function updateSleepUI(){
+  const left = sleepRemain();
+  sleepBtn.classList.toggle('active', !!left);
+  if (left){ sleepBadge.hidden = false; sleepBadge.textContent = left > 99 ? '99' : String(left); }
+  else sleepBadge.hidden = true;
+  sleepPop.querySelectorAll('button').forEach(function(b){
+    const m = Number(b.dataset.min);
+    b.classList.toggle('active', m === 0 ? !sleepAt : (!!sleepAt && sleepRemain() <= m && sleepRemain() > m - 1));
+  });
+}
+function setSleep(minutes){
+  clearTimeout(sleepTimer);
+  clearInterval(sleepTick);
+  if (!minutes){
+    sleepAt = 0; updateSleepUI(); toast('已关闭睡眠定时'); return;
+  }
+  sleepAt = Date.now() + minutes * 60000;
+  sleepTimer = setTimeout(function(){
+    sleepAt = 0;
+    wantPlaying = false;
+    if (!audio.paused) audio.pause();
+    updateSleepUI();
+    toast('睡眠定时到，已停止播放');
+  }, minutes * 60000);
+  sleepTick = setInterval(updateSleepUI, 30000);
+  updateSleepUI();
+  toast('将在 ' + minutes + ' 分钟后停止播放');
+}
+
+sleepBtn.addEventListener('click', function(ev){
+  ev.stopPropagation();
+  themePop.hidden = true;
+  sleepPop.hidden = !sleepPop.hidden;
+  sleepBtn.setAttribute('aria-expanded', String(!sleepPop.hidden));
+  updateSleepUI();
+});
+sleepPop.addEventListener('click', function(ev){
+  const b = ev.target.closest('button');
+  if (!b) return;
+  setSleep(Number(b.dataset.min));
+  sleepPop.hidden = true;
+  sleepBtn.setAttribute('aria-expanded', 'false');
+});
+document.addEventListener('click', function(ev){
+  if (!sleepPop.hidden && !sleepPop.contains(ev.target)) sleepPop.hidden = true;
 });
 
 /* ===== 最近收听 ===== */
@@ -1203,7 +1334,7 @@ function renderResume(){
   const box = document.getElementById('resume');
   if (!box) return;
   const last = recent[0];
-  if (!last || favOnly || input.value.trim() || (current && current.url === last.u)){ box.hidden = true; return; }
+  if (!last || favOnly || filterKey || input.value.trim() || (current && current.url === last.u)){ box.hidden = true; return; }
   box.hidden = false;
   document.getElementById('resumeName').textContent = last.n;
   const c = COUNTRY[last.c] || last.c || '';
