@@ -1027,40 +1027,23 @@ function apiOne(host, path){
   });
 }
 
-/* 镜像接力：先发第一个，2 秒没回再叠加下一个，谁先返回用谁（避免三个请求互相抢带宽） */
-function api(path){
-  return new Promise(function(resolve){
-    let settled = false;
-    const controllers = [];
-    const timers = [];
-    function finish(v){
-      if (settled) return;
-      settled = true;
-      timers.forEach(clearTimeout);
-      controllers.forEach(function(c){ try{ c.abort(); }catch(e){} });
-      resolve(v === undefined ? null : v);
-    }
-    HOSTS.forEach(function(host, i){
-      const kick = setTimeout(function(){
-        if (settled) return;
-        const ctrl = new AbortController();
-        controllers.push(ctrl);
-        const t = setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 22000);
-        timers.push(t);
-        fetch(host + path, { signal: ctrl.signal, headers: { 'User-Agent': 'radio-web-demo' } })
-          .then(function(res){
-            if (!res.ok) throw new Error('status');
-            return res.json();
-          })
-          .then(function(data){
-            if (Array.isArray(data) && data.length) finish(data);
-          })
-          .catch(function(){});
-      }, i * 2000);
-      timers.push(kick);
-    });
-    setTimeout(function(){ finish(null); }, 26000);
-  });
+/* 顺序请求镜像：一次只用一个通道，失败再换下一个（并发会互相抢带宽，反而更慢） */
+async function api(path){
+  const deadline = Date.now() + 18000;
+  for (const host of HOSTS){
+    const left = deadline - Date.now();
+    if (left < 1500) break;
+    try{
+      const ctrl = new AbortController();
+      const timer = setTimeout(function(){ ctrl.abort(); }, Math.min(12000, left));
+      const res = await fetch(host + path, { signal: ctrl.signal, headers: { 'User-Agent': 'radio-web-demo' } });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (Array.isArray(data) && data.length) return data;
+    }catch(e){ /* 换下一个镜像 */ }
+  }
+  return null;
 }
 
 const CACHE_KEY = 'radio_cache_v1';
@@ -1096,27 +1079,11 @@ async function loadDefault(){
   if (!cached) setHint(true);
   let raw = null;
   try{
-    raw = await api('/json/stations/search?limit=80&hidebroken=true&order=clickcount&reverse=true&countrycode=CN');
-    if (raw && !favOnly){
-      const quick = dedupe(raw.map(norm).filter(Boolean)).sort(function(a,b){ return b.clicks - a.clicks; });
-      if (quick.length){
-        pool = mergeMine(quick);
-        render(pool);
-        renderResume();
-        writeCache(quick);
-      }
-    }
-    const full = await api('/json/stations/search?limit=200&hidebroken=true&order=clickcount&reverse=true&countrycode=CN');
-    if (full) raw = full;
-    else if (fullRetry < 2 && !favOnly){
-      fullRetry++;
-      setTimeout(function(){ if (!favOnly && !loading) loadDefault(); }, 20000);
-    }
+    raw = await api('/json/stations/search?limit=200&hidebroken=true&order=clickcount&reverse=true&countrycode=CN');
   }finally{
     loading = false;
     setHint(false);
   }
-  if (favOnly) return;
   if (!raw){
     if (!cached){
       pool = mergeMine(dedupe(SEED.map(norm)));

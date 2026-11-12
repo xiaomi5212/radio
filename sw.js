@@ -1,5 +1,5 @@
 /* 网络电台 · 离线缓存（只缓存页面外壳，音频与接口始终走网络） */
-const CACHE = 'radio-shell-v4';
+const CACHE = 'radio-shell-v5';
 const ROOT = './';
 const PAGE = './index.html';
 const ASSETS = [ROOT, PAGE, './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
@@ -34,6 +34,21 @@ self.addEventListener('fetch', function(e){
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+
+  /* 电台接口：先用上次结果，后台再更新，避免每次都等欧洲服务器 */
+  if (url.hostname.indexOf('radio-browser.info') >= 0){
+    e.respondWith(caches.open(CACHE).then(function(c){
+      return c.match(req).then(function(cached){
+        const net = fetch(req).then(function(res){
+          if (res && res.ok) c.put(req, res.clone()).catch(function(){});
+          return res;
+        }).catch(function(){ return cached; });
+        return cached || net;
+      });
+    }));
+    return;
+  }
+
   if (url.origin !== self.location.origin) return;
 
   if (req.mode === 'navigate'){
