@@ -1418,6 +1418,8 @@ async function loadBlog(){
     const res = await fetch('blog.json', { cache: 'no-cache' });
     if (!res.ok) throw new Error('bad status');
     blogData = await res.json();
+    if (blogShow !== 'all' && !(blogData.shows || []).some(function(sh){ return sh.id === blogShow; })) blogShow = 'all';
+    renderShowChips();
     renderBlog();
   }catch(e){
     blogState.hidden = false;
@@ -1439,6 +1441,21 @@ function playEpisode(ep, card, keepRandom){
     if (sl) sl.textContent = '随机播放';
   }
   play({ name: ep.title, url: ep.audio, country: ep.show, tag: ep.date, hls: 0, podcast: true });
+}
+
+function renderShowChips(){
+  if (!blogChips || !blogData) return;
+  blogChips.innerHTML = '';
+  const mkChip = function(id, label){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (blogShow === id ? ' active' : '');
+    b.dataset.show = id;
+    b.textContent = label;
+    blogChips.appendChild(b);
+  };
+  mkChip('all', '全部');
+  (blogData.shows || []).forEach(function(sh){ mkChip(sh.id, sh.name); });
 }
 
 function flattenEpisodes(){
