@@ -153,6 +153,22 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
 .rand-fab:hover{transform:translateY(-1px)}
 .rand-fab[hidden]{display:none}
 
+.install-tip{
+  position:fixed;left:12px;right:12px;bottom:calc(78px + env(safe-area-inset-bottom));z-index:31;
+  max-width:560px;margin:0 auto;display:flex;align-items:center;gap:10px;
+  padding:12px 14px;border-radius:14px;border:1px solid var(--line);
+  background:var(--surface,rgba(32,26,21,.96));box-shadow:0 10px 30px rgba(0,0,0,.34);
+  font-size:13px;line-height:1.45;color:var(--fg);backdrop-filter:blur(8px);
+}
+.install-tip[hidden]{display:none}
+.install-tip .it-text{flex:1;min-width:0}
+.install-tip .it-sub{color:var(--muted);font-size:12px;margin-top:2px}
+.install-tip button{font:inherit;cursor:pointer;flex:none}
+.install-tip .it-go{padding:8px 14px;border-radius:999px;border:1px solid var(--accent);
+  background:var(--accent-wash);color:var(--accent);font-size:13px}
+.install-tip .it-x{width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1}
+body.tip-on .rand-fab{bottom:calc(158px + env(safe-area-inset-bottom))}
+
 .mini-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
   border:1px solid var(--line);background:var(--surface);color:var(--muted);font:inherit;font-size:12px;
   cursor:pointer;transition:color .16s,border-color .16s}
@@ -433,6 +449,15 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
     <div class="state" id="blogState" hidden></div>
   </section>
 </main>
+
+<div class="install-tip" id="installTip" hidden>
+  <div class="it-text">
+    <div id="itTitle">把网络电台装到桌面</div>
+    <div class="it-sub" id="itSub">打开即用，不用每次找网址</div>
+  </div>
+  <button class="it-go" id="itGo" type="button">安装</button>
+  <button class="it-x" id="itX" type="button" aria-label="关闭">×</button>
+</div>
 
 <button class="rand-fab" id="randFab" type="button">
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
@@ -1333,6 +1358,71 @@ clearBtn.addEventListener('click', ()=>{
 });
 
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+/* ===== 添加到桌面引导 ===== */
+(function(){
+  const KEY = 'radio_install_v1';
+  const tip = document.getElementById('installTip');
+  if (!tip) return;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator.standalone === true);
+  if (isStandalone) return;
+
+  let last = 0;
+  try{ last = Number(localStorage.getItem(KEY) || 0); }catch(e){}
+  if (last && Date.now() - last < 30 * 86400000) return;
+
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  let deferred = null;
+
+  function close(){
+    tip.hidden = true;
+    document.body.classList.remove('tip-on');
+    try{ localStorage.setItem(KEY, String(Date.now())); }catch(e){}
+  }
+
+  function show(){
+    tip.hidden = false;
+    document.body.classList.add('tip-on');
+  }
+
+  document.getElementById('itX').addEventListener('click', close);
+  document.getElementById('itGo').addEventListener('click', async function(){
+    if (deferred){
+      deferred.prompt();
+      const res = await deferred.userChoice;
+      deferred = null;
+      if (res && res.outcome === 'accepted'){ close(); return; }
+    }
+    close();
+  });
+
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    deferred = e;
+    document.getElementById('itTitle').textContent = '把网络电台装到桌面';
+    document.getElementById('itSub').textContent = '独立窗口打开，像 APP 一样使用';
+    document.getElementById('itGo').textContent = '安装';
+    setTimeout(show, 2500);
+  });
+
+  window.addEventListener('appinstalled', close);
+
+  if (isIOS){
+    document.getElementById('itTitle').textContent = '添加到主屏幕';
+    document.getElementById('itSub').textContent = '点下方「分享」，再选「添加到主屏幕」';
+    document.getElementById('itGo').textContent = '知道了';
+    setTimeout(show, 3500);
+  } else if (isAndroid && !deferred){
+    // 安卓浏览器若未触发安装事件，给出手动路径
+    document.getElementById('itTitle').textContent = '添加到桌面';
+    document.getElementById('itSub').textContent = '打开浏览器菜单，选「安装应用」或「添加到主屏幕」';
+    document.getElementById('itGo').textContent = '知道了';
+    setTimeout(function(){ if (!deferred && tip.hidden) show(); }, 4000);
+  }
+})();
 
 /* ===== 播客续播记忆 ===== */
 const EP_POS_KEY = 'radio_ep_pos_v1';
