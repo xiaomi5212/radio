@@ -142,6 +142,16 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
 .seg button.active{background:var(--accent-wash);color:var(--accent)}
 .seg button:hover{color:var(--text)}
 
+.lh-right{display:flex;align-items:center;gap:12px}
+.mini-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface);color:var(--muted);font:inherit;font-size:12px;
+  cursor:pointer;transition:color .16s,border-color .16s}
+.mini-btn:hover{color:var(--accent);border-color:var(--accent)}
+.mini-btn.playing{color:var(--accent);border-color:var(--accent);background:var(--accent-wash)}
+.more-btn{width:100%;padding:12px;margin-top:10px;border:1px dashed var(--line-strong);border-radius:14px;
+  background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.more-btn:hover{color:var(--text);border-color:var(--accent)}
+
 .blog-list{display:flex;flex-direction:column;gap:8px}
 .ep{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);
   border-radius:14px;background:var(--surface);cursor:pointer;transition:border-color .16s,background .16s}
@@ -388,7 +398,15 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
       <div class="lh-left">
         <h2 id="blogTitle">最新节目</h2>
       </div>
-      <span class="count" id="blogCount"></span>
+      <div class="lh-right">
+        <button class="mini-btn" id="shuffleBtn" type="button">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+            <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+          </svg>
+          <span id="shuffleLabel">随机播放</span>
+        </button>
+        <span class="count" id="blogCount"></span>
+      </div>
     </div>
     <div class="blog-list" id="blogList"></div>
     <div class="state" id="blogState" hidden></div>
@@ -1247,7 +1265,7 @@ let lastQuery = '';
 input.addEventListener('input', ()=>{
   const q = input.value.trim();
   clearBtn.classList.toggle('show', !!q);
-  if (view === 'blog'){ clearTimeout(searchTimer); renderBlog(); return; }
+  if (view === 'blog'){ clearTimeout(searchTimer); blogLimit = 10; renderBlog(); return; }
   clearTimeout(searchTimer);
   renderResume();
 
@@ -1275,7 +1293,7 @@ input.addEventListener('input', ()=>{
 clearBtn.addEventListener('click', ()=>{
   input.value = '';
   clearBtn.classList.remove('show');
-  if (view === 'blog'){ renderBlog(); return; }
+  if (view === 'blog'){ blogLimit = 10; renderBlog(); return; }
   lastQuery = '';
   clearTimeout(searchTimer);
   input.focus();
@@ -1326,29 +1344,90 @@ async function loadBlog(){
   }
 }
 
-function playEpisode(ep, card){
+let blogLimit = 10;
+let randomEp = null;
+
+function playEpisode(ep, card, keepRandom){
   blogList.querySelectorAll('.ep').forEach(function(c){ c.classList.remove('playing'); });
   if (card) card.classList.add('playing');
+  if (!keepRandom){
+    randomEp = null;
+    const sb = document.getElementById('shuffleBtn');
+    if (sb){ sb.classList.remove('playing'); }
+    const sl = document.getElementById('shuffleLabel');
+    if (sl) sl.textContent = '随机播放';
+  }
   play({ name: ep.title, url: ep.audio, country: ep.show, tag: ep.date, hls: 0, podcast: true });
 }
 
-function renderBlog(){
-  if (!blogData) return;
-  const q = input.value.trim().toLowerCase();
-  let list = [];
-  blogData.shows.forEach(function(sh){
+function flattenEpisodes(){
+  const list = [];
+  (blogData ? blogData.shows : []).forEach(function(sh){
     if (blogShow !== 'all' && sh.id !== blogShow) return;
     sh.episodes.forEach(function(ep){
-      if (q && (ep.title + ' ' + sh.name).toLowerCase().indexOf(q) < 0) return;
       list.push({ title: ep.title, date: ep.date, audio: ep.audio, duration: ep.duration,
                   cover: ep.cover || sh.cover, show: sh.name });
     });
   });
   list.sort(function(a, b){ return (b.date || '').localeCompare(a.date || ''); });
+  return list;
+}
+
+function makeEpCard(ep, isRandom){
+  const card = document.createElement('div');
+  card.className = 'ep';
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  card.setAttribute('aria-label', '播放 ' + ep.title);
+
+  const art = document.createElement('div');
+  art.className = 'ep-art';
+  if (ep.cover){
+    const img = document.createElement('img');
+    img.referrerPolicy = 'no-referrer';
+    img.loading = 'lazy';
+    img.src = ep.cover;
+    img.alt = '';
+    img.onerror = function(){ art.textContent = '♪'; };
+    art.appendChild(img);
+  }else{
+    art.textContent = '♪';
+  }
+
+  const info = document.createElement('div');
+  info.className = 'ep-info';
+  const name = document.createElement('p');
+  name.className = 'ep-name';
+  name.textContent = ep.title;
+  const meta = document.createElement('p');
+  meta.className = 'ep-meta';
+  meta.textContent = [isRandom ? '随机播放中' : '', ep.show, ep.date, ep.duration].filter(Boolean).join(' · ');
+  info.appendChild(name); info.appendChild(meta);
+
+  const btn = document.createElement('span');
+  btn.className = 'ep-btn';
+  btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 4l14 8-14 8z"/></svg>';
+
+  card.appendChild(art); card.appendChild(info); card.appendChild(btn);
+  if (current && current.url === ep.audio) card.classList.add('playing');
+
+  card.addEventListener('click', function(){ playEpisode(ep, card); });
+  card.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); playEpisode(ep, card); }
+  });
+  return card;
+}
+
+function renderBlog(){
+  if (!blogData) return;
+  const q = input.value.trim().toLowerCase();
+  let list = flattenEpisodes();
+  if (q) list = list.filter(function(ep){ return (ep.title + ' ' + ep.show).toLowerCase().indexOf(q) >= 0; });
 
   blogList.innerHTML = '';
-  blogCount.textContent = list.length ? '共 ' + list.length + ' 期' : '';
-  blogTitle.textContent = blogShow === 'all' ? '最新节目' : '最新节目';
+  blogCount.textContent = list.length ? '共 ' + list.length + ' 期 · 显示 ' + Math.min(blogLimit, list.length) : '';
+  blogTitle.textContent = '最新节目';
+
   if (!list.length){
     blogState.hidden = false;
     blogState.innerHTML = '<p>没有找到节目</p><small>换个关键词或少选一个节目试试</small>';
@@ -1357,57 +1436,57 @@ function renderBlog(){
   blogState.hidden = true;
 
   const frag = document.createDocumentFragment();
-  list.forEach(function(ep){
-    const card = document.createElement('div');
-    card.className = 'ep';
-    card.setAttribute('role', 'button');
-    card.setAttribute('tabindex', '0');
-    card.setAttribute('aria-label', '播放 ' + ep.title);
-
-    const art = document.createElement('div');
-    art.className = 'ep-art';
-    if (ep.cover){
-      const img = document.createElement('img');
-      img.referrerPolicy = 'no-referrer';
-      img.loading = 'lazy';
-      img.src = ep.cover;
-      img.alt = '';
-      img.onerror = function(){ art.textContent = '♪'; };
-      art.appendChild(img);
-    }else{
-      art.textContent = '♪';
-    }
-
-    const info = document.createElement('div');
-    info.className = 'ep-info';
-    const name = document.createElement('p');
-    name.className = 'ep-name';
-    name.textContent = ep.title;
-    const meta = document.createElement('p');
-    meta.className = 'ep-meta';
-    meta.textContent = [ep.show, ep.date, ep.duration].filter(Boolean).join(' · ');
-    info.appendChild(name); info.appendChild(meta);
-
-    const btn = document.createElement('span');
-    btn.className = 'ep-btn';
-    btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 4l14 8-14 8z"/></svg>';
-
-    card.appendChild(art); card.appendChild(info); card.appendChild(btn);
-    if (current && current.url === ep.audio) card.classList.add('playing');
-
-    card.addEventListener('click', function(){ playEpisode(ep, card); });
-    card.addEventListener('keydown', function(ev){
-      if (ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); playEpisode(ep, card); }
-    });
-    frag.appendChild(card);
-  });
+  // 随机播放的那一期单独置顶，方便看到在放什么
+  if (randomEp){
+    frag.appendChild(makeEpCard(randomEp, true));
+    list = list.filter(function(ep){ return ep.audio !== randomEp.audio; });
+  }
+  list.slice(0, blogLimit).forEach(function(ep){ frag.appendChild(makeEpCard(ep)); });
   blogList.appendChild(frag);
+
+  if (list.length > blogLimit){
+    const more = document.createElement('button');
+    more.className = 'more-btn';
+    more.type = 'button';
+    more.textContent = '加载更多（还有 ' + (list.length - blogLimit) + ' 期）';
+    more.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      blogLimit += 10;
+      renderBlog();
+    });
+    blogList.appendChild(more);
+  }
 }
+
+function shufflePlay(){
+  const list = flattenEpisodes();
+  if (!list.length) return;
+  let pick = null;
+  for (let i = 0; i < 12; i++){
+    const cand = list[Math.floor(Math.random() * list.length)];
+    if (!current || cand.audio !== current.url){ pick = cand; break; }
+  }
+  if (!pick) pick = list[Math.floor(Math.random() * list.length)];
+  randomEp = pick;
+  const btn = document.getElementById('shuffleBtn');
+  btn.classList.add('playing');
+  document.getElementById('shuffleLabel').textContent = '换一期';
+  renderBlog();
+  const target = Array.prototype.find.call(blogList.querySelectorAll('.ep'), function(c){
+    return c.getAttribute('aria-label') === '播放 ' + pick.title;
+  });
+  playEpisode(pick, target, true);
+  toast('随机播放：' + pick.show + ' · ' + pick.title);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.getElementById('shuffleBtn').addEventListener('click', shufflePlay);
 
 blogChips.addEventListener('click', function(ev){
   const b = ev.target.closest('.chip');
   if (!b) return;
   blogShow = b.dataset.show;
+  blogLimit = 10;
   this.querySelectorAll('.chip').forEach(function(c){ c.classList.toggle('active', c === b); });
   renderBlog();
 });
