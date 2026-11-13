@@ -50,7 +50,7 @@ self.addEventListener('fetch', function(e){
   }
 
   /* 自己的电台清单：先用缓存，同时后台更新 */
-  if (url.origin === self.location.origin && url.pathname.endsWith('stations.json')){
+  if (url.origin === self.location.origin && (url.pathname.endsWith('stations.json') || url.pathname.endsWith('blog.json'))){
     e.respondWith(caches.open(CACHE).then(function(c){
       return c.match(req).then(function(cached){
         const net = fetch(req).then(function(res){

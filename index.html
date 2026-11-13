@@ -135,6 +135,29 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
 @media(min-width:980px){.grid{grid-template-columns:repeat(3,1fr);gap:14px}}
 @media(min-width:1420px){.grid{grid-template-columns:repeat(4,1fr)}}
 
+.seg{display:inline-flex;gap:2px;padding:3px;margin:0 0 14px;border:1px solid var(--line);
+  border-radius:999px;background:var(--surface)}
+.seg button{padding:7px 16px;border:0;border-radius:999px;background:transparent;color:var(--muted);
+  font:inherit;font-size:13px;cursor:pointer;transition:background .16s,color .16s}
+.seg button.active{background:var(--accent-wash);color:var(--accent)}
+.seg button:hover{color:var(--text)}
+
+.blog-list{display:flex;flex-direction:column;gap:8px}
+.ep{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:14px;background:var(--surface);cursor:pointer;transition:border-color .16s,background .16s}
+.ep:hover{border-color:var(--line-strong)}
+.ep-art{width:52px;height:52px;flex:none;border-radius:10px;overflow:hidden;background:var(--surface-2);
+  display:grid;place-items:center;color:var(--muted);font-size:16px}
+.ep-art img{width:100%;height:100%;object-fit:cover;display:block}
+.ep-info{min-width:0;flex:1}
+.ep-name{margin:0;font-size:15px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+.ep-meta{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.ep-btn{width:36px;height:36px;flex:none;border-radius:50%;border:1px solid var(--line);
+  background:transparent;color:var(--muted);display:grid;place-items:center}
+.ep.playing .ep-btn{color:var(--accent);border-color:var(--accent)}
+.ep.playing .ep-name{color:var(--accent)}
+
 .chips{display:flex;gap:8px;overflow-x:auto;margin:0 0 12px;padding-bottom:2px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface);
@@ -319,7 +342,13 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
 </header>
 
 <main>
-  <div class="chips" id="chips" role="group" aria-label="按分类筛选">
+  <div class="seg" id="seg" role="tablist" aria-label="内容切换">
+    <button type="button" class="active" data-view="radio" role="tab" aria-selected="true">电台</button>
+    <button type="button" data-view="blog" role="tab" aria-selected="false">人文故事</button>
+  </div>
+
+  <div id="radioView">
+<div class="chips" id="chips" role="group" aria-label="按分类筛选">
     <button class="chip active" type="button" data-key="">全部</button>
     <button class="chip" type="button" data-key="music">音乐</button>
     <button class="chip" type="button" data-key="news">新闻</button>
@@ -346,6 +375,24 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
   </div>
   <div class="grid" id="grid"></div>
   <div class="state" id="state" hidden></div>
+  </div>
+
+  <section class="blog" id="blogView" hidden aria-label="人文故事">
+    <div class="chips" id="blogChips" role="group" aria-label="选择节目">
+      <button class="chip active" type="button" data-show="all">全部</button>
+      <button class="chip" type="button" data-show="storyfm">故事FM</button>
+      <button class="chip" type="button" data-show="hzyh">忽左忽右</button>
+      <button class="chip" type="button" data-show="whyx">文化有限</button>
+    </div>
+    <div class="list-head">
+      <div class="lh-left">
+        <h2 id="blogTitle">最新节目</h2>
+      </div>
+      <span class="count" id="blogCount"></span>
+    </div>
+    <div class="blog-list" id="blogList"></div>
+    <div class="state" id="blogState" hidden></div>
+  </section>
 </main>
 
 <div class="player">
@@ -634,6 +681,7 @@ function mergeMine(list){
 }
 
 function metaText(s){
+  if (s.podcast) return { c: s.country || '', t: s.tag || '' };
   const c = COUNTRY[s.country] || s.country || '';
   const t = TAG[s.tag] || '';
   return { c, t };
@@ -997,6 +1045,7 @@ audio.addEventListener('error', ()=>{
 
 favBtn.addEventListener('click', function(){
   favOnly = !favOnly;
+  if (favOnly) setView('radio');
   if (favOnly){
     input.value = '';
     clearBtn.classList.remove('show');
@@ -1198,6 +1247,7 @@ let lastQuery = '';
 input.addEventListener('input', ()=>{
   const q = input.value.trim();
   clearBtn.classList.toggle('show', !!q);
+  if (view === 'blog'){ clearTimeout(searchTimer); renderBlog(); return; }
   clearTimeout(searchTimer);
   renderResume();
 
@@ -1225,10 +1275,141 @@ input.addEventListener('input', ()=>{
 clearBtn.addEventListener('click', ()=>{
   input.value = '';
   clearBtn.classList.remove('show');
+  if (view === 'blog'){ renderBlog(); return; }
   lastQuery = '';
   clearTimeout(searchTimer);
   input.focus();
   loadDefault();
+});
+
+/* ===== 人文故事（播客） ===== */
+let view = 'radio', blogData = null, blogShow = 'all';
+const seg = document.getElementById('seg');
+const radioView = document.getElementById('radioView');
+const blogView = document.getElementById('blogView');
+const blogList = document.getElementById('blogList');
+const blogChips = document.getElementById('blogChips');
+const blogState = document.getElementById('blogState');
+const blogCount = document.getElementById('blogCount');
+const blogTitle = document.getElementById('blogTitle');
+
+function setView(v){
+  view = v;
+  seg.querySelectorAll('button').forEach(function(b){
+    const on = b.dataset.view === v;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  radioView.hidden = v !== 'radio';
+  blogView.hidden = v !== 'blog';
+  input.placeholder = v === 'blog' ? '搜索节目名称' : '搜索电台名称';
+  if (v === 'blog'){
+    if (blogData) renderBlog(); else loadBlog();
+  }else{
+    renderResume();
+  }
+}
+seg.addEventListener('click', function(ev){
+  const b = ev.target.closest('button');
+  if (b) setView(b.dataset.view);
+});
+
+async function loadBlog(){
+  try{
+    const res = await fetch('blog.json', { cache: 'no-cache' });
+    if (!res.ok) throw new Error('bad status');
+    blogData = await res.json();
+    renderBlog();
+  }catch(e){
+    blogState.hidden = false;
+    blogState.innerHTML = '<p>节目单加载失败</p><small>请稍后刷新页面</small>';
+  }
+}
+
+function playEpisode(ep, card){
+  blogList.querySelectorAll('.ep').forEach(function(c){ c.classList.remove('playing'); });
+  if (card) card.classList.add('playing');
+  play({ name: ep.title, url: ep.audio, country: ep.show, tag: ep.date, hls: 0, podcast: true });
+}
+
+function renderBlog(){
+  if (!blogData) return;
+  const q = input.value.trim().toLowerCase();
+  let list = [];
+  blogData.shows.forEach(function(sh){
+    if (blogShow !== 'all' && sh.id !== blogShow) return;
+    sh.episodes.forEach(function(ep){
+      if (q && (ep.title + ' ' + sh.name).toLowerCase().indexOf(q) < 0) return;
+      list.push({ title: ep.title, date: ep.date, audio: ep.audio, duration: ep.duration,
+                  cover: ep.cover || sh.cover, show: sh.name });
+    });
+  });
+  list.sort(function(a, b){ return (b.date || '').localeCompare(a.date || ''); });
+
+  blogList.innerHTML = '';
+  blogCount.textContent = list.length ? '共 ' + list.length + ' 期' : '';
+  blogTitle.textContent = blogShow === 'all' ? '最新节目' : '最新节目';
+  if (!list.length){
+    blogState.hidden = false;
+    blogState.innerHTML = '<p>没有找到节目</p><small>换个关键词或少选一个节目试试</small>';
+    return;
+  }
+  blogState.hidden = true;
+
+  const frag = document.createDocumentFragment();
+  list.forEach(function(ep){
+    const card = document.createElement('div');
+    card.className = 'ep';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-label', '播放 ' + ep.title);
+
+    const art = document.createElement('div');
+    art.className = 'ep-art';
+    if (ep.cover){
+      const img = document.createElement('img');
+      img.referrerPolicy = 'no-referrer';
+      img.loading = 'lazy';
+      img.src = ep.cover;
+      img.alt = '';
+      img.onerror = function(){ art.textContent = '♪'; };
+      art.appendChild(img);
+    }else{
+      art.textContent = '♪';
+    }
+
+    const info = document.createElement('div');
+    info.className = 'ep-info';
+    const name = document.createElement('p');
+    name.className = 'ep-name';
+    name.textContent = ep.title;
+    const meta = document.createElement('p');
+    meta.className = 'ep-meta';
+    meta.textContent = [ep.show, ep.date, ep.duration].filter(Boolean).join(' · ');
+    info.appendChild(name); info.appendChild(meta);
+
+    const btn = document.createElement('span');
+    btn.className = 'ep-btn';
+    btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 4l14 8-14 8z"/></svg>';
+
+    card.appendChild(art); card.appendChild(info); card.appendChild(btn);
+    if (current && current.url === ep.audio) card.classList.add('playing');
+
+    card.addEventListener('click', function(){ playEpisode(ep, card); });
+    card.addEventListener('keydown', function(ev){
+      if (ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); playEpisode(ep, card); }
+    });
+    frag.appendChild(card);
+  });
+  blogList.appendChild(frag);
+}
+
+blogChips.addEventListener('click', function(ev){
+  const b = ev.target.closest('.chip');
+  if (!b) return;
+  blogShow = b.dataset.show;
+  this.querySelectorAll('.chip').forEach(function(c){ c.classList.toggle('active', c === b); });
+  renderBlog();
 });
 
 /* ===== 分类筛选 ===== */
