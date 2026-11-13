@@ -145,6 +145,14 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
 .seg button:hover{color:var(--text)}
 
 .lh-right{display:flex;align-items:center;gap:12px}
+.rand-fab{position:fixed;right:16px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:29;
+  display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:999px;
+  border:1px solid var(--accent);background:var(--accent-wash);color:var(--accent);
+  font:inherit;font-size:13px;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.3);
+  backdrop-filter:blur(6px);transition:transform .16s,opacity .16s}
+.rand-fab:hover{transform:translateY(-1px)}
+.rand-fab[hidden]{display:none}
+
 .mini-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
   border:1px solid var(--line);background:var(--surface);color:var(--muted);font:inherit;font-size:12px;
   cursor:pointer;transition:color .16s,border-color .16s}
@@ -425,6 +433,13 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
     <div class="state" id="blogState" hidden></div>
   </section>
 </main>
+
+<button class="rand-fab" id="randFab" type="button" hidden>
+  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+    <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+  </svg>
+  <span>换一台</span>
+</button>
 
 <div class="player">
   <div class="player-in">
@@ -1333,6 +1348,9 @@ function setView(v){
   });
   radioView.hidden = v !== 'radio';
   blogView.hidden = v !== 'blog';
+  if (randFab){
+    randFab.hidden = v !== 'radio' || !randBtn.classList.contains('playing');
+  }
   input.placeholder = v === 'blog' ? '搜索节目名称' : '搜索电台名称';
   if (v === 'blog'){
     if (blogData) renderBlog(); else loadBlog();
@@ -1507,11 +1525,13 @@ blogChips.addEventListener('click', function(ev){
 /* ===== 电台随机播放 ===== */
 const randBtn = document.getElementById('randBtn');
 const randLabel = document.getElementById('randLabel');
+const randFab = document.getElementById('randFab');
 
 function resetRandUI(){
   if (!randBtn) return;
   randBtn.classList.remove('playing');
   randLabel.textContent = '随机播放';
+  if (randFab) randFab.hidden = true;
 }
 
 function shuffleStation(){
@@ -1525,6 +1545,7 @@ function shuffleStation(){
   if (!pick) pick = list[Math.floor(Math.random() * list.length)];
   randBtn.classList.add('playing');
   randLabel.textContent = '换一台';
+  if (randFab) randFab.hidden = false;
   play(pick);
   toast('随机播放：' + pick.name);
   const item = elMap.get(pick.url);
@@ -1534,6 +1555,7 @@ function shuffleStation(){
 }
 
 randBtn.addEventListener('click', shuffleStation);
+if (randFab) randFab.addEventListener('click', shuffleStation);
 
 /* ===== 分类筛选 ===== */
 document.getElementById('chips').addEventListener('click', function(ev){
