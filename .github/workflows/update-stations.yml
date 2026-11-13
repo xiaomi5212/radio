@@ -1,4 +1,4 @@
-name: 更新电台列表
+name: 更新电台与播客
 
 on:
   schedule:
@@ -22,6 +22,14 @@ jobs:
             python3 build_stations.py
           fi
 
+      - name: 生成播客节目单
+        run: |
+          if [ -f scripts/build_blog.py ]; then
+            python3 scripts/build_blog.py
+          else
+            python3 build_blog.py
+          fi
+
       - name: 提交变更
         run: |
           git config user.name "github-actions"
@@ -30,7 +38,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "没有变化，跳过提交"
           else
-            git commit -m "chore: 更新电台列表"
+            git commit -m "chore: 更新电台与播客内容"
             git push
           fi
 #（注：内容由AI生成）
