@@ -13,6 +13,10 @@ SHOWS = [
     {"id": "storyfm", "name": "故事FM", "feed": "https://feeds.storyfm.cn/storyfm.xml"},
     {"id": "hzyh", "name": "忽左忽右", "feed": "https://feed.xyzfm.space/cv4bkgpuglwp"},
     {"id": "whyx", "name": "文化有限", "feed": "https://s1.proxy.wavpub.com/weknownothing.xml"},
+    {"id": "shiyuji", "name": "时雨集", "feed": "https://feed.xyzfm.space/q88r8mmm6v8q"},
+    {"id": "lbzy", "name": "两步之遥", "feed": "https://feed.xyzfm.space/tgxubyqgfkn3"},
+    {"id": "yeshi", "name": "野史下酒", "feed": "https://s1.proxy.wavpub.com/yeshixiajiu.xml"},
+    {"id": "lishixueren", "name": "历史学人", "feed": "https://feed.xyzfm.space/xnqbd8txqmgf"},
 ]
 
 LIMIT = 100
