@@ -15,7 +15,7 @@ SHOWS = [
     {"id": "whyx", "name": "文化有限", "feed": "https://s1.proxy.wavpub.com/weknownothing.xml"},
 ]
 
-LIMIT = 30
+LIMIT = 100
 
 MONTHS = {m: i + 1 for i, m in enumerate(
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])}
