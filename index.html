@@ -17,6 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
 <style>
 :root{
   --on-accent:#1a1512;
@@ -1410,12 +1411,9 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
   window.addEventListener('appinstalled', close);
 
-  if (isIOS){
-    document.getElementById('itTitle').textContent = '添加到主屏幕';
-    document.getElementById('itSub').textContent = '点下方「分享」，再选「添加到主屏幕」';
-    document.getElementById('itGo').textContent = '知道了';
-    setTimeout(show, 3500);
-  } else if (isAndroid && !deferred){
+  if (isIOS) return;
+
+  if (isAndroid && !deferred){
     // 安卓浏览器若未触发安装事件，给出手动路径
     document.getElementById('itTitle').textContent = '添加到桌面';
     document.getElementById('itSub').textContent = '打开浏览器菜单，选「安装应用」或「添加到主屏幕」';
