@@ -124,6 +124,7 @@ def main():
                     "favicon": "",
                     "country": "中国",
                     "countrycode": "CN",
+                    "region": (item.get("location") or "").strip(),
                     "tags": HLS_TAG.get(item.get("category") or "", ""),
                     "clickcount": 0,
                 })
