@@ -434,11 +434,11 @@ main{max-width:1240px;margin:0 auto;padding:18px 18px 0}
   </section>
 </main>
 
-<button class="rand-fab" id="randFab" type="button" hidden>
+<button class="rand-fab" id="randFab" type="button">
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
     <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
   </svg>
-  <span>换一台</span>
+  <span id="randFabLabel">随机播放</span>
 </button>
 
 <div class="player">
@@ -680,6 +680,7 @@ function norm(raw){
     url: String(url).trim(),
     fav: fav.trim(),
     country: raw.c || raw.country || '',
+    region: (raw.region || raw.loc || '').trim(),
     tag: (raw.t || (raw.tags || '').split(',')[0] || '').trim(),
     hls: hlsFlag,
     clicks: raw.k || raw.clickcount || 0
@@ -1301,7 +1302,10 @@ input.addEventListener('input', ()=>{
   if (favOnly){ favOnly = false; updateFavMarks(); }
   if (q){
     const ql = q.toLowerCase();
-    const local = pool.filter(function(s){ return s.name.toLowerCase().indexOf(ql) >= 0; });
+    const local = pool.filter(function(s){
+      return (s.name + ' ' + (s.tag || '') + ' ' + (s.region || '') + ' ' + (s.country || ''))
+        .toLowerCase().indexOf(ql) >= 0;
+    });
     listTitle.textContent = '搜索「' + q + '」';
     if (local.length) render(local);
     else showState('正在搜索…', '正在从在线电台库查找');
@@ -1328,6 +1332,54 @@ clearBtn.addEventListener('click', ()=>{
   loadDefault();
 });
 
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+/* ===== 播客续播记忆 ===== */
+const EP_POS_KEY = 'radio_ep_pos_v1';
+let lastPosSave = 0, seekedUrl = '';
+
+function readPosMap(){
+  try{ return JSON.parse(localStorage.getItem(EP_POS_KEY) || '{}'); }catch(e){ return {}; }
+}
+function writePosMap(m){
+  try{ localStorage.setItem(EP_POS_KEY, JSON.stringify(m)); }catch(e){}
+}
+function prunePosMap(m){
+  const keys = Object.keys(m);
+  if (keys.length <= 60) return;
+  keys.sort(function(a, b){ return (m[a].t || 0) - (m[b].t || 0); });
+  for (let i = 0; i < keys.length - 60; i++) delete m[keys[i]];
+}
+function rememberPos(force){
+  if (!current || !current.podcast || !isFinite(audio.currentTime) || audio.currentTime < 3) return;
+  const now = Date.now();
+  if (!force && now - lastPosSave < 5000) return;
+  lastPosSave = now;
+  const m = readPosMap();
+  m[current.url] = { p: Math.round(audio.currentTime), t: now };
+  prunePosMap(m);
+  writePosMap(m);
+}
+
+audio.addEventListener('loadedmetadata', function(){
+  if (!current || !current.podcast) return;
+  if (seekedUrl === current.url) return;
+  seekedUrl = current.url;
+  const rec = readPosMap()[current.url];
+  if (rec && rec.p > 5 && isFinite(audio.duration) && rec.p < audio.duration - 10){
+    try{ audio.currentTime = rec.p; }catch(e){}
+    toast('已从上次位置继续（' + Math.max(1, Math.round(rec.p / 60)) + ' 分钟处）');
+  }
+});
+audio.addEventListener('timeupdate', function(){ rememberPos(false); });
+audio.addEventListener('pause', function(){ rememberPos(true); });
+audio.addEventListener('ended', function(){
+  if (!current || !current.podcast) return;
+  const m = readPosMap();
+  delete m[current.url];
+  writePosMap(m);
+});
+
 /* ===== 人文故事（播客） ===== */
 let view = 'radio', blogData = null, blogShow = 'all';
 const seg = document.getElementById('seg');
@@ -1348,9 +1400,7 @@ function setView(v){
   });
   radioView.hidden = v !== 'radio';
   blogView.hidden = v !== 'blog';
-  if (randFab){
-    randFab.hidden = v !== 'radio' || !randBtn.classList.contains('playing');
-  }
+  if (randFab) randFab.hidden = v !== 'radio';
   input.placeholder = v === 'blog' ? '搜索节目名称' : '搜索电台名称';
   if (v === 'blog'){
     if (blogData) renderBlog(); else loadBlog();
@@ -1531,7 +1581,7 @@ function resetRandUI(){
   if (!randBtn) return;
   randBtn.classList.remove('playing');
   randLabel.textContent = '随机播放';
-  if (randFab) randFab.hidden = true;
+  if (randFab){ randFab.classList.remove('playing'); document.getElementById('randFabLabel').textContent = '随机播放'; }
 }
 
 function shuffleStation(){
@@ -1545,7 +1595,7 @@ function shuffleStation(){
   if (!pick) pick = list[Math.floor(Math.random() * list.length)];
   randBtn.classList.add('playing');
   randLabel.textContent = '换一台';
-  if (randFab) randFab.hidden = false;
+  if (randFab){ randFab.classList.add('playing'); document.getElementById('randFabLabel').textContent = '换一台'; }
   play(pick);
   toast('随机播放：' + pick.name);
   const item = elMap.get(pick.url);
